@@ -17,6 +17,6 @@ dtype = pytest.simple_fixture("dtype", params=("float32", "float64", "complex128
 
 
 
-# N     = pytest.simple_fixture("N", params=(2,))
-# seed  = pytest.simple_fixture("seed", params=(0, ))
-# dtype = pytest.simple_fixture("dtype", params=("float32",))
+N     = pytest.simple_fixture("N", params=(2,4, 6))
+seed  = pytest.simple_fixture("seed", params=(0, ))
+dtype = pytest.simple_fixture("dtype", params=("float32",))
