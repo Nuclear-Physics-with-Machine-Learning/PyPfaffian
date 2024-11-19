@@ -1,1 +1,1 @@
-from . pfaffian import pfaffian, log_pfaffian
+from . pfaffian import pfaffian, log_pfaffian, Pfaffian

@@ -16,13 +16,16 @@ To call the pfaffian function from a framework, you can work like this:
 ```python
 from py_pfaffian.jax import pfaffian
 
-M = 
+# Construct an antisymmetric matrix: 
+M = ...
 
 pf = pfaffian(M)
+```
+
 
 ## Limitations
 
 Currently, the pfaffian has implementations only in JAX, and only with the Parlett-Reid algorithm via decomposition.  The gradient computation is supported via a `custom_jvp` interface in JAX.  The algorithm is compatible with `jax.jit`, `jax.vmap`, and differentiation in JAX.
 
-The pytorch implementation is not available yet but will be soon, likely targeting a triton implementation.
+Pytorch has a basic implementation that may not be performant for larger matrices - and isn't vmapped at this time.
 

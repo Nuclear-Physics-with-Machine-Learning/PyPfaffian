@@ -1,5 +1,66 @@
 import torch
 
+class Pfaffian(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, matrix):
+        """
+        In the forward pass we receive a Tensor containing the input and return
+        a Tensor containing the output. ctx is a context object that can be used
+        to stash information for backward computation. You can cache arbitrary
+        objects for use in the backward pass using the ctx.save_for_backward method.
+        """
+        pf_val = pfaffian(matrix, method="LTL")
+        ctx.save_for_backward(matrix, pf_val)
+        return pf_val
+
+    @staticmethod
+    def jvp(ctx, tangents):
+
+        A, primal_out = ctx.saved_tensors
+
+        A_dot = tangents
+        primal_out = pfaffian_LTL(A)
+        # The primal out is Pf(A)
+        # Similar to jacobi's formula,
+        # 1/pf(A) * dpf(A)/dt = 1/2 tr(A^-1 dA/dt)
+
+        # Therefore dpf(A)/dt = 1/2 pf(A) * tr(A^-1 dA/dt)
+        
+        # Directly compute the inverse.  Beware of instabilities with large matrices.
+        A_inv = torch.linalg.inv(A)
+
+        product = torch.matmul(A_inv, A_dot)
+        product =  primal_out * product
+
+        tangent_out = 0.5*torch.linalg.trace(product)
+        return primal_out, tangent_out
+    
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        """
+        In the backward pass we receive a Tensor containing the gradient of the loss
+        with respect to the output, and we need to compute the gradient of the loss
+        with respect to the input.
+        """
+        matrix, pf_val = ctx.saved_tensors
+        # print(matrix)
+        # print(pf_val)
+        # print(grad_output.shape)
+        # print(grad_output)
+
+
+        # print("HERE")
+        m_inv = torch.inverse(matrix)
+
+        # print(m_inv * grad_output * pf_val)
+
+
+        return m_inv  * pf_val * grad_output
+
+
+
 
 def pfaffian(M : torch.Tensor, method: str ="LTL"):
     """Compute and return the Pfaffian of a matrix M
@@ -24,7 +85,9 @@ def pfaffian(M : torch.Tensor, method: str ="LTL"):
     if method == "LTL":
         # Use the LTL method directly:
         from . utils import pfaffian_LTL
-        return pfaffian_LTL(M)
+        pf = pfaffian_LTL(M)
+        pf._require_grad = True
+        return pf
     elif method == "direct":
         from . utils import pfaffian_direct
         return pfaffian_direct(M)

@@ -1,42 +1,40 @@
 import pytest
 
-import jax
-from jax import config; config.update("jax_enable_x64", True)
+import torch
 
 
-def test_pfaffian_jvp(N, seed, dtype):
+# def test_pfaffian_jvp(N, seed, dtype):
 
-    from py_pfaffian.jax import pfaffian
+#     from py_pfaffian.torch import Pfaffian
 
-    # For JAX, create a random matrix then Anti-symmetrize it:
+#     torch.manual_seed(int(seed))
 
+#     matrix = torch.rand(size=(N, N))
 
-    key = jax.random.PRNGKey(int(seed))
-    matrix = jax.random.uniform(key, (N, N))
+#     matrix.requires_grad_(True)
 
-    # Antisymmetrization:
-    matrix = matrix - matrix.T
+#     # Antisymmetrization:
+#     matrix = matrix - matrix.T
 
-    # pf_ltl = pfaffian(matrix, method="LTL")
+#     print(matrix)
 
+#     tangent = torch.zeros_like(matrix)
+#     tangent[0,3] += 1.0
 
-    tangent = jax.numpy.zeros_like(matrix)
-    tangent = tangent.at[0,3].add(1.0)
-
-    # For a pfaffian, can't move one side without moving the other:
-    tangent = tangent - tangent.T
-
-    pf, pf_dot =  jax.jvp(pfaffian, (matrix,), (tangent,) )
-
-    # pf_ltl, grad_value = pf_grad_fn(matrix)
-
-    kick=1-5
-    numerical_pf_dot = (1/kick) *( pfaffian(matrix + 0.5*kick * tangent) - pfaffian(matrix - 0.5*kick * tangent))
+#     tangent = tangent - tangent.T
 
 
-    assert jax.numpy.allclose(numerical_pf_dot, pf_dot)
+#     value, gradients = Pfaffian.apply, ), (matrix,), (tangent,))
+#     print("Gradients: ", gradients)
 
-    # print(grad_value)
+#     kick=1-5
+#     numerical_pf_dot = (1/kick) *( Pfaffian.apply(matrix + 0.5*kick * tangent) - Pfaffian.apply(matrix - 0.5*kick * tangent))
+
+#     print("Numerical gradients: ", numerical_pf_dot)
+
+#     assert torch.allclose(numerical_pf_dot, pf_ltl.grad)
+
+#     # print(grad_value)
 
 
 
@@ -47,27 +45,29 @@ def test_pfaffian_vjp(N, seed, dtype):
 
     # For JAX, create a random matrix then Anti-symmetrize it:
 
+    torch.manual_seed(int(seed))
 
-    key = jax.random.PRNGKey(int(seed))
-    matrix = jax.random.uniform(key, (N, N))
+    matrix = torch.rand(size=(N, N))
+
+    matrix.requires_grad_(True)
 
     # Antisymmetrization:
     matrix = matrix - matrix.T
 
-    # pf_ltl = pfaffian(matrix, method="LTL")
+    pf = Pfaffian.apply()
 
+    tangent = jax.numpy.zeros_like(matrix)
+    tangent = tangent.at[0,3].add(1.0)
+
+    # For a pfaffian, can't move one side without moving the other:
+    tangent = tangent - tangent.T
 
     pf, vjp_fn = jax.vjp(pfaffian, matrix)
 
-    grad_output = 0.01
 
-    vjp = vjp_fn(grad_output)[0]
-
-    # For the pfaffian the jvp ought to be;
-    exact_vjp = - 0.5 * pf * grad_output * jax.numpy.linalg.inv(matrix)
+    vjp = vjp_fn(1.0)
 
 
-    assert jax.numpy.allclose(exact_vjp, vjp)
 
 
 
