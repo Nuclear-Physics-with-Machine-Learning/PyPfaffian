@@ -1,93 +1,96 @@
 import torch
 
-class Pfaffian(torch.autograd.Function):
-
-    @staticmethod
-    def forward(ctx, matrix):
-        """
-        In the forward pass we receive a Tensor containing the input and return
-        a Tensor containing the output. ctx is a context object that can be used
-        to stash information for backward computation. You can cache arbitrary
-        objects for use in the backward pass using the ctx.save_for_backward method.
-        """
-        pf_val = pfaffian(matrix, method="LTL")
-        ctx.save_for_backward(matrix, pf_val)
-        return pf_val
-
-    @staticmethod
-    def jvp(ctx, tangents):
-
-        A, primal_out = ctx.saved_tensors
-
-        A_dot = tangents
-        primal_out = pfaffian_LTL(A)
-        # The primal out is Pf(A)
-        # Similar to jacobi's formula,
-        # 1/pf(A) * dpf(A)/dt = 1/2 tr(A^-1 dA/dt)
-
-        # Therefore dpf(A)/dt = 1/2 pf(A) * tr(A^-1 dA/dt)
-        
-        # Directly compute the inverse.  Beware of instabilities with large matrices.
-        A_inv = torch.linalg.inv(A)
-
-        product = torch.matmul(A_inv, A_dot)
-        product =  primal_out * product
-
-        tangent_out = 0.5*torch.linalg.trace(product)
-        return primal_out, tangent_out
-    
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        """
-        In the backward pass we receive a Tensor containing the gradient of the loss
-        with respect to the output, and we need to compute the gradient of the loss
-        with respect to the input.
-        """
-        matrix, pf_val = ctx.saved_tensors
-        # print(matrix)
-        # print(pf_val)
-        # print(grad_output.shape)
-        # print(grad_output)
+from . utils import batched_log_pfaffian_ltl, pfaffian_LTL
 
 
-        # print("HERE")
-        m_inv = torch.inverse(matrix)
-
-        # print(m_inv * grad_output * pf_val)
-
-
-        return m_inv  * pf_val * grad_output
-
-
+# Check if Triton is available
+_triton_available = False
+try:
+    import triton
+    _triton_available = True
+except ImportError:
+    pass
 
 
-def pfaffian(M : torch.Tensor, method: str ="LTL"):
-    """Compute and return the Pfaffian of a matrix M
+class LogPfaffian(torch.autograd.Function):
+    """Differentiable log-Pfaffian via Parlett-Reid LTL decomposition.
 
-    Args:
-        M (jax.Array): _description_
-        method (str, optional): Available methods. Defaults to "LTL" (most efficient).  Can also use direct and recursive for small matrices.
+    Composes with torch.vmap, torch.compile, and torch.func.grad/jacrev.
+    Uses the new-style forward/setup_context API to avoid graph breaks.
 
-    Raises:
-        Exception: If you supply a method that isn't yet supported, this will raise an exception.
-        After more methods are supported, this exception will be removed.
-
-    Returns:
-        jax.Array: A single valued number in the same dtype as the matrix M.
+    Forward: Parlett-Reid LTL with partial pivoting (batched).
+    Backward: Analytical gradient d(log|pf(A)|)/dA_ij = 1/2 * (A^{-1})_ij
     """
 
+    @staticmethod
+    def forward(A):
+        """Compute (sign, log|pf(A)|) for input A.
+
+        Args:
+            A: skew-symmetric matrix, shape (N, N) or (batch, N, N)
+
+        Returns:
+            sign: shape () or (batch,)
+            logpf: shape () or (batch,)
+        """
+        sign, logpf = batched_log_pfaffian_ltl(A)
+        return sign, logpf
+
+    @staticmethod
+    def setup_context(ctx, inputs, output):
+        A, = inputs
+        sign, logpf = output
+        ctx.save_for_backward(A)
+
+    @staticmethod
+    def backward(ctx, grad_sign, grad_logpf):
+        """Analytical backward via the Jacobi-like formula for skew-symmetric A:
+        d(log|pf(A)|)/dA_ij = -1/2 * (A^{-1})_ij
+        """
+        A, = ctx.saved_tensors
+        A_inv = torch.linalg.inv(A)
+        # grad_logpf may be scalar or (batch,); broadcast to (..., 1, 1)
+        if grad_logpf.dim() == 0:
+            return -0.5 * A_inv * grad_logpf
+        else:
+            return -0.5 * A_inv * grad_logpf.unsqueeze(-1).unsqueeze(-1)
+
+    @staticmethod
+    def vmap(info, in_dims, A):
+        """vmap batching rule: forward already handles batched input."""
+        bdim = in_dims[0]
+        if bdim is not None and bdim != 0:
+            A = A.movedim(bdim, 0)
+        elif bdim is None:
+            # Unbatched input inside vmap: add batch dim
+            A = A.unsqueeze(0)
+
+        sign, logpf = LogPfaffian.apply(A)
+
+        if bdim is None:
+            return (sign.squeeze(0), logpf.squeeze(0)), (None, None)
+        return (sign, logpf), (0, 0)
+
+
+def pfaffian(M: torch.Tensor, method: str = "LTL"):
+    """Compute and return the Pfaffian of a skew-symmetric matrix M.
+
+    Args:
+        M: skew-symmetric matrix, shape (N, N)
+        method: "LTL" (default), "direct" (N<=4), or "recursive" (reference)
+
+    Returns:
+        Scalar Pfaffian value
+    """
     if method == "auto":
-        N = M.shape[0]
-        if N % 2 == 0 or N == 2 or N == 4: method = "direct"
-        else: method = "LTL"
+        N = M.shape[-1]
+        if N <= 4:
+            method = "direct"
+        else:
+            method = "LTL"
 
     if method == "LTL":
-        # Use the LTL method directly:
-        from . utils import pfaffian_LTL
-        pf = pfaffian_LTL(M)
-        pf._require_grad = True
-        return pf
+        return pfaffian_LTL(M)
     elif method == "direct":
         from . utils import pfaffian_direct
         return pfaffian_direct(M)
@@ -95,40 +98,33 @@ def pfaffian(M : torch.Tensor, method: str ="LTL"):
         from . utils import pfaffian_recursive
         return pfaffian_recursive(M)
     else:
-        raise Exception(f"Method {method} not yet supported")
-    
-def log_pfaffian(M : torch.Tensor, method: str ="LTL"):
-    """Compute and return the log of the Pfaffian of a matrix M
+        raise ValueError(f"Method {method} not supported")
+
+
+def log_pfaffian(M: torch.Tensor, backend: str = "auto"):
+    """Compute (sign, log|pf(M)|) for a skew-symmetric matrix M.
+
+    Uses the Parlett-Reid LTL algorithm. Supports vmap, torch.compile,
+    and autograd differentiation.
 
     Args:
-        M (jax.Array): The matrix M to compute the pfaffian on.
-        method (str, optional): _description_. Defaults to "LTL".  Recursive is not available in log format.
-
-    Raises:
-        Exception: If you supply a method that isn't yet supported, this will raise an exception.
-        After more methods are supported, this exception will be removed.
+        M: skew-symmetric matrix, shape (N, N) or (batch, N, N)
+        backend: "auto" (default), "pytorch", or "triton"
+            - "auto": use Triton on CUDA if available, else pure PyTorch
+            - "pytorch": always use pure PyTorch backend
+            - "triton": use Triton backend (requires GPU + triton)
 
     Returns:
-        jax.Array: A single valued number in the same dtype as the matrix M.
+        (sign, log|pf|) tuple
     """
-
-    if method == "auto":
-        N = M.shape[0]
-        if N % 2 == 0 or N == 2 or N == 4: method = "direct"
-        else: method = "LTL"
-
-    if method == "LTL":
-        # Use the LTL method directly:
-        # Different paths, to enable direct log in complex with a single return value:
-        if torch.is_complex(M):
-            raise Exception("Complex Log Pfaffian direct computation not available yet.")
-            return complex_log_pfaffian_LTL(M)
+    if backend == "auto":
+        if M.is_cuda and _triton_available:
+            backend = "triton"
         else:
-            from . utils import log_pfaffian_LTL
-            return log_pfaffian_LTL(M)
-    elif method == "direct":
-        from . utils import log_pfaffian_direct
-        return log_pfaffian_direct(M)
+            backend = "pytorch"
+
+    if backend == "triton":
+        from . triton_pfaffian import triton_log_pfaffian
+        return triton_log_pfaffian(M)
     else:
-        raise Exception(f"Method {method} not yet supported")
-    
+        return LogPfaffian.apply(M)

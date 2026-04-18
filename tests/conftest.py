@@ -1,5 +1,5 @@
 import pytest
-import time
+import torch
 
 
 def simple_fixture(name, params):
@@ -8,15 +8,25 @@ def simple_fixture(name, params):
         return request.param
     return inner
 
-import pytest
 pytest.simple_fixture = simple_fixture
 
-N     = pytest.simple_fixture("N", params=(2,4,16,32))
-seed  = pytest.simple_fixture("seed", params=(0, time.time()))
-dtype = pytest.simple_fixture("dtype", params=("float32", "float64", "complex128"))
+N     = pytest.simple_fixture("N", params=(2, 4, 6, 12, 16, 20))
+seed  = pytest.simple_fixture("seed", params=(0, 42))
+dtype = pytest.simple_fixture("dtype", params=(torch.float64,))
 
 
+@pytest.fixture
+def skew_matrix(N, seed, dtype):
+    """Generate a random skew-symmetric matrix."""
+    torch.manual_seed(seed)
+    M = torch.randn(N, N, dtype=dtype)
+    return M - M.T
 
-N     = pytest.simple_fixture("N", params=(2,4, 6))
-seed  = pytest.simple_fixture("seed", params=(0, ))
-dtype = pytest.simple_fixture("dtype", params=("float32",))
+
+@pytest.fixture
+def skew_matrix_batch(N, seed, dtype):
+    """Generate a batch of random skew-symmetric matrices."""
+    torch.manual_seed(seed)
+    batch = 5
+    M = torch.randn(batch, N, N, dtype=dtype)
+    return M - M.transpose(-1, -2)
