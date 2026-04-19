@@ -2,115 +2,79 @@ import pytest
 
 import torch
 
-
-# def test_pfaffian_jvp(N, seed, dtype):
-
-#     from py_pfaffian.torch import Pfaffian
-
-#     torch.manual_seed(int(seed))
-
-#     matrix = torch.rand(size=(N, N))
-
-#     matrix.requires_grad_(True)
-
-#     # Antisymmetrization:
-#     matrix = matrix - matrix.T
-
-#     print(matrix)
-
-#     tangent = torch.zeros_like(matrix)
-#     tangent[0,3] += 1.0
-
-#     tangent = tangent - tangent.T
+from py_pfaffian.torch.pfaffian import LogPfaffian
+from py_pfaffian.torch.utils import pfaffian_LTL
 
 
-#     value, gradients = Pfaffian.apply, ), (matrix,), (tangent,))
-#     print("Gradients: ", gradients)
+def test_log_pfaffian_gradcheck(N, seed, dtype):
+    """Verify LogPfaffian backward against numerical finite differences.
 
-#     kick=1-5
-#     numerical_pf_dot = (1/kick) *( Pfaffian.apply(matrix + 0.5*kick * tangent) - Pfaffian.apply(matrix - 0.5*kick * tangent))
+    Parametrize through antisymmetrization so gradcheck's per-element
+    perturbations never break skew-symmetry.
+    """
+    torch.manual_seed(seed)
+    M = torch.randn(N, N, dtype=dtype, requires_grad=True)
 
-#     print("Numerical gradients: ", numerical_pf_dot)
+    def logpf_via_skew(M):
+        A = M - M.T
+        _sign, logpf = LogPfaffian.apply(A)
+        return logpf
 
-#     assert torch.allclose(numerical_pf_dot, pf_ltl.grad)
-
-#     # print(grad_value)
+    assert torch.autograd.gradcheck(logpf_via_skew, (M,), atol=1e-5, rtol=1e-4)
 
 
+def test_log_pfaffian_vjp_analytical(skew_matrix):
+    """Gradient of log|pf(A)| w.r.t. A should equal -1/2 * A^{-1}."""
+    A = skew_matrix.clone().requires_grad_(True)
+
+    _sign, logpf = LogPfaffian.apply(A)
+    logpf.backward()
+
+    expected = -0.5 * torch.linalg.inv(skew_matrix)
+    assert torch.allclose(A.grad, expected, atol=1e-8), \
+        f"max error: {(A.grad - expected).abs().max().item()}"
 
 
-def test_pfaffian_vjp(N, seed, dtype):
-
-    from py_pfaffian.jax import pfaffian
-
-    # For JAX, create a random matrix then Anti-symmetrize it:
+def test_pfaffian_jvp_numerical(N, seed, dtype):
+    """Directional derivative of pf(A) via backward matches central finite differences."""
+    if N < 4:
+        pytest.skip("Tangent perturbs entry [0,3]; need N >= 4")
 
     torch.manual_seed(int(seed))
+    A = torch.randn(N, N, dtype=dtype)
+    A = A - A.T
 
-    matrix = torch.rand(size=(N, N))
-
-    matrix.requires_grad_(True)
-
-    # Antisymmetrization:
-    matrix = matrix - matrix.T
-
-    pf = Pfaffian.apply()
-
-    tangent = jax.numpy.zeros_like(matrix)
-    tangent = tangent.at[0,3].add(1.0)
-
-    # For a pfaffian, can't move one side without moving the other:
+    # Skew-symmetric tangent touching [0,3] and [3,0]
+    tangent = torch.zeros_like(A)
+    tangent[0, 3] = 1.0
     tangent = tangent - tangent.T
 
-    pf, vjp_fn = jax.vjp(pfaffian, matrix)
+    # Analytical directional derivative via backward
+    A_diff = A.clone().requires_grad_(True)
+    sign, logpf = LogPfaffian.apply(A_diff)
+    pf = sign * torch.exp(logpf)
+    pf.backward()
+    analytical_jvp = (A_diff.grad * tangent).sum()
+
+    # Central finite-difference
+    kick = 1e-5
+    pf_plus  = pfaffian_LTL(A + 0.5 * kick * tangent)
+    pf_minus = pfaffian_LTL(A - 0.5 * kick * tangent)
+    numerical_jvp = (pf_plus - pf_minus) / kick
+
+    assert torch.allclose(analytical_jvp, numerical_jvp, atol=1e-4), \
+        f"analytical={analytical_jvp.item()}, numerical={numerical_jvp.item()}"
 
 
-    vjp = vjp_fn(1.0)
+def test_log_pfaffian_vmap(skew_matrix_batch):
+    """vmap over LogPfaffian.apply matches per-matrix calls."""
+    batch = skew_matrix_batch.shape[0]
 
+    sign_vmap, logpf_vmap = torch.vmap(LogPfaffian.apply)(skew_matrix_batch)
 
-
-
-
-
-
-
-# def test_log_pfaffian_correctness(N, seed, dtype):
-
-#     from py_pfaffian.jax import log_pfaffian
-
-#     # For JAX, create a random matrix then Anti-symmetrize it:
-
-
-#     key = jax.random.PRNGKey(int(seed))
-#     matrix = jax.random.uniform(key, (N, N))
-
-#     # Antisymmetrization:
-#     matrix = matrix - matrix.T
-
-#     sign_LTL, log_pf_ltl = log_pfaffian(matrix, method="LTL")
-
-#     print(matrix)
-
-#     print("LTL: ", log_pf_ltl)
-
-#     if N <=4 :
-#         sign_direct, log_pf_direct = log_pfaffian(matrix, method="direct")
-#         print("Direct, ", log_pf_ltl)
-#         print("Sign direct: ", sign_direct)
-#         print("Sign LTL: ", sign_LTL)
-#         assert jax.numpy.allclose(sign_LTL, sign_direct) 
-#         assert jax.numpy.allclose(log_pf_ltl, log_pf_direct) 
-   
-
-#     # Last check, need to ensure the pfaffian squared matches the determinant:
-
-#     sign, logdet = jax.numpy.linalg.slogdet(matrix)
-
-
-#     print(logdet)
-#     print(log_pf_ltl)
-
-#     # We don't check the sign, since it can be either way.
-#     assert jax.numpy.allclose(log_pf_ltl*2, logdet)
-
-
+    for i in range(batch):
+        sign_i, logpf_i = LogPfaffian.apply(skew_matrix_batch[i])
+        assert torch.allclose(sign_vmap[i], sign_i), \
+            f"batch[{i}] sign: vmap={sign_vmap[i].item()}, single={sign_i.item()}"
+        assert torch.allclose(logpf_vmap[i], logpf_i, atol=1e-10), \
+            f"batch[{i}] logpf: vmap={logpf_vmap[i].item()}, single={logpf_i.item()}"
