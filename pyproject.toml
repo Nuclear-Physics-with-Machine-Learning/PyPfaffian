@@ -4,19 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-pfaffian"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name="Corey Adams", email="coreyjadams@gmail.com" },
 ]
-description = "A python implementation of the pfaffian in jax and eventually pytorch."
+description = "A differentiable Pfaffian for JAX and PyTorch, with GPU support."
 readme = "README.md"
-requires-python = ">=3.8"
+license = "MIT"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Intended Audience :: Science/Research",
 ]
 
+[project.optional-dependencies]
+jax = ["jax", "jaxlib"]
+torch = ["torch"]
+all = ["jax", "jaxlib", "torch"]
+test = ["pytest", "numpy", "jax", "jaxlib", "torch"]
+
 [project.urls]
-Homepage = "https://github.com/pypa/sampleproject"
-Issues = "https://github.com/pypa/sampleproject/issues"
+Homepage = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian"
+Repository = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian"
+Issues = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian/issues"
+Changelog = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["py_pfaffian*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

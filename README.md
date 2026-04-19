@@ -23,9 +23,14 @@ pf = pfaffian(M)
 ```
 
 
-## Limitations
+## Backends
 
-Currently, the pfaffian has implementations only in JAX, and only with the Parlett-Reid algorithm via decomposition.  The gradient computation is supported via a `custom_jvp` interface in JAX.  The algorithm is compatible with `jax.jit`, `jax.vmap`, and differentiation in JAX.
+### JAX
+Full implementation with LTL (Parlett-Reid), direct, and recursive methods.  Gradient computation via `custom_jvp`. Compatible with `jax.jit`, `jax.vmap`, and differentiation.
 
-Pytorch has a basic implementation that may not be performant for larger matrices - and isn't vmapped at this time.
+### PyTorch
+Full implementation with LTL, direct, and recursive methods.  Analytical backward pass via `torch.autograd.Function`.  Supports `torch.vmap` and batched inputs.
+
+### Triton (coming soon)
+GPU kernel for the LTL decomposition on CUDA devices.
 
