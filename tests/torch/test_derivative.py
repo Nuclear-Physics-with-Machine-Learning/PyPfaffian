@@ -2,8 +2,8 @@ import pytest
 
 import torch
 
-from py_pfaffian.torch.pfaffian import LogPfaffian
-from py_pfaffian.torch.utils import pfaffian_LTL
+from torchpfaff.pfaffian import LogPfaffian
+from torchpfaff.utils import pfaffian_LTL
 
 
 def test_log_pfaffian_gradcheck(N, seed, dtype):

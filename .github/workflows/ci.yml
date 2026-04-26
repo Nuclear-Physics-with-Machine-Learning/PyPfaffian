@@ -13,7 +13,6 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13"]
-        backend: [jax, torch, joint]
 
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install ".[test]"
 
-      - name: Run ${{ matrix.backend }} tests
-        run: pytest tests/${{ matrix.backend }}/ -v
+      - name: Run tests
+        run: pytest tests/torch/ -v
 
   build:
     runs-on: ubuntu-latest

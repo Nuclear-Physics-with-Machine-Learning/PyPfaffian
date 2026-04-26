@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from py_pfaffian.torch import log_pfaffian, LogPfaffian
-from py_pfaffian.torch.utils import pfaffian_recursive, pfaffian_LTL, batched_log_pfaffian_ltl
+from torchpfaff import log_pfaffian, LogPfaffian
+from torchpfaff.utils import pfaffian_recursive, pfaffian_LTL, batched_log_pfaffian_ltl
 
 
 def test_pfaffian_ltl_matches_recursive(skew_matrix):

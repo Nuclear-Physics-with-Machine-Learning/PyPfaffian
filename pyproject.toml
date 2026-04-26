@@ -3,15 +3,18 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "py-pfaffian"
-version = "0.1.0"
+name = "torchpfaff"
+version = "0.2.0"
 authors = [
   { name="Corey Adams", email="coreyjadams@gmail.com" },
 ]
-description = "A differentiable Pfaffian for JAX and PyTorch, with GPU support."
+description = "A differentiable Pfaffian for PyTorch, with GPU support via Triton."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
+dependencies = [
+    "torch",
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
@@ -23,19 +26,17 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-jax = ["jax", "jaxlib"]
-torch = ["torch"]
-all = ["jax", "jaxlib", "torch"]
-test = ["pytest", "numpy", "jax", "jaxlib", "torch"]
+triton = ["triton"]
+test = ["pytest", "numpy"]
 
 [project.urls]
-Homepage = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian"
-Repository = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian"
-Issues = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian/issues"
-Changelog = "https://github.com/Nuclear-Physics-with-Machine-Learning/PyPfaffian/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff"
+Repository = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff"
+Issues = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff/issues"
+Changelog = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-include = ["py_pfaffian*"]
+include = ["torchpfaff*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

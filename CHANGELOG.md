@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-20
+
+### Added
+- Triton GPU kernel for LTL log-Pfaffian on CUDA devices.
+- Automatic backend dispatch: Triton on CUDA when available, PyTorch fallback otherwise.
+
+### Removed
+- JAX backend and all JAX-related code and tests.
+- Cross-backend (joint) test suite.
+
+### Changed
+- Package is now PyTorch-only; `torch` is a required dependency.
+- Bumped minimum Python version to 3.12.
+
 ## [0.1.0] - 2026-04-18
 
 ### Added
