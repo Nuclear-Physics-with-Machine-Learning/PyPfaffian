@@ -65,7 +65,15 @@ class LogPfaffian(torch.autograd.Function):
             # Unbatched input inside vmap: add batch dim
             A = A.unsqueeze(0)
 
-        sign, logpf = LogPfaffian.apply(A)
+        # Prefer Triton inside vmap: it runs entirely on-GPU and avoids
+        # the overhead of the batched PyTorch LTL path.  However, inductor
+        # can't lower a Triton kernel inside vmap, so fall back to the
+        # (now tensorized) PyTorch path under torch.compile.
+        if A.is_cuda and _triton_available and not torch.compiler.is_compiling():
+            from .triton_pfaffian import triton_log_pfaffian
+            sign, logpf = triton_log_pfaffian(A)
+        else:
+            sign, logpf = LogPfaffian.apply(A)
 
         if bdim is None:
             return (sign.squeeze(0), logpf.squeeze(0)), (None, None)
@@ -118,8 +126,15 @@ def log_pfaffian(M: torch.Tensor, backend: str = "auto"):
         (sign, log|pf|) tuple
     """
     if backend == "auto":
-        if M.is_cuda and _triton_available:
-            backend = "triton"
+        if M.is_cuda and _triton_available and not torch.compiler.is_compiling():
+            # Triton needs raw CUDA pointers; functorch transforms (vmap,
+            # grad, …) wrap tensors in BatchedTensor / FunctionalTensor
+            # that lack storage.  Fall back to PyTorch in that case.
+            try:
+                M.data_ptr()
+                backend = "triton"
+            except RuntimeError:
+                backend = "pytorch"
         else:
             backend = "pytorch"
 

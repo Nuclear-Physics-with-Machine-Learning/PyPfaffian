@@ -95,7 +95,7 @@ def _log_pfaffian_ltl_kernel(
             nu = tl.sum(tl.where(ci[None, :] == k1, W, 0.0), axis=1)
 
             # Rank-2 skew update: W += outer(mu, nu) - outer(nu, mu)
-            W = W + mu[None, :] * nu[:, None] - nu[None, :] * mu[:, None]
+            W = W + mu[:, None] * nu[None, :] - nu[:, None] * mu[None, :]
 
             # Accumulate sign and log
             pf_sign = pf_sign * tl.where(update > 0, 1.0, -1.0)

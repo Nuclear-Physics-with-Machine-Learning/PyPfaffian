@@ -28,6 +28,7 @@ classifiers = [
 [project.optional-dependencies]
 triton = ["triton"]
 test = ["pytest", "numpy"]
+dev = ["pre-commit", "ruff", "pytest", "numpy"]
 
 [project.urls]
 Homepage = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff"
@@ -37,6 +38,15 @@ Changelog = "https://github.com/Nuclear-Physics-with-Machine-Learning/torchpfaff
 
 [tool.setuptools.packages.find]
 include = ["torchpfaff*"]
+
+[tool.ruff]
+lint.select = ["E", "F", "I"]
+lint.fixable = ["I"]
+lint.ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*.py" = ["S101"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

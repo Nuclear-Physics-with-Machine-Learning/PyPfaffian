@@ -180,6 +180,9 @@ def main():
                         help="Number of timed iterations (default: 20)")
     parser.add_argument("--csv", type=str, default=None,
                         help="Write results to CSV file")
+    parser.add_argument("--backend", type=str, nargs="+", default=None,
+                        choices=["pytorch", "triton"],
+                        help="Backends to benchmark (default: all available)")
     parser.add_argument("--skip-correctness", action="store_true",
                         help="Skip pf^2==det correctness check")
     args = parser.parse_args()
@@ -189,8 +192,16 @@ def main():
     elem_bytes = torch.finfo(dtype).bits // 8
 
     # Determine backends to run
-    backends: list[str] = []
-    if device.type == "cpu":
+    if args.backend is not None:
+        backends = args.backend
+        if "triton" in backends and not _triton_available:
+            print("ERROR: triton backend requested but triton is not installed",
+                  file=sys.stderr)
+            sys.exit(1)
+        if "triton" in backends and device.type != "cuda":
+            print("ERROR: triton backend requires --device cuda", file=sys.stderr)
+            sys.exit(1)
+    elif device.type == "cpu":
         backends = ["pytorch"]
     else:
         backends = ["pytorch"]

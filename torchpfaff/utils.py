@@ -114,6 +114,7 @@ def batched_log_pfaffian_ltl(A):
     log_pf = torch.zeros(batch, dtype=A.dtype, device=A.device)
 
     arange_n = torch.arange(n, device=A.device)
+    batch_idx = torch.arange(batch, device=A.device)
 
     for k in range(0, n - 1, 2):
         # --- Pivot selection ---
@@ -123,18 +124,27 @@ def batched_log_pfaffian_ltl(A):
         masked_col = torch.where(mask, torch.zeros_like(col), col)
         kp = torch.argmax(torch.abs(masked_col), dim=1)  # (batch,)
 
-        # --- Pivot swap (per matrix in the batch) ---
-        # We must iterate over the batch for data-dependent row/col swaps.
-        # This is fine: we are inside an autograd.Function boundary,
-        # not inside a functorch transform.
-        for b in range(batch):
-            kp_b = kp[b].item()
-            if kp_b != k + 1:
-                # Swap rows k+1 and kp_b
-                W[b, [k+1, kp_b], :] = W[b, [kp_b, k+1], :]
-                # Swap cols k+1 and kp_b
-                W[b, :, [k+1, kp_b]] = W[b, :, [kp_b, k+1]]
-                pf_sign[b] = -pf_sign[b]
+        # --- Pivot swap (fully batched, no .item()) ---
+        k1 = k + 1
+        need_swap = (kp != k1)
+        swap_mask = need_swap.unsqueeze(-1)  # (batch, 1)
+
+        # Row swap: exchange rows k1 and kp[b] for each batch element
+        row_k1 = W[:, k1, :].clone()
+        row_kp = W[batch_idx, kp, :].clone()
+        W[:, k1, :] = torch.where(swap_mask, row_kp, row_k1)
+        W[batch_idx, kp, :] = torch.where(swap_mask, row_k1, row_kp)
+
+        # Column swap: exchange cols k1 and kp[b] for each batch element
+        col_k1 = W[:, :, k1].clone()
+        kp_idx = kp.view(-1, 1, 1).expand(-1, n, 1)
+        col_kp = torch.gather(W, 2, kp_idx).squeeze(-1)
+        W[:, :, k1] = torch.where(swap_mask, col_kp, col_k1)
+        W.scatter_(2, kp_idx,
+                   torch.where(swap_mask.unsqueeze(-1),
+                               col_k1.unsqueeze(-1), col_kp.unsqueeze(-1)))
+
+        pf_sign = torch.where(need_swap, -pf_sign, pf_sign)
 
         # --- Gauss vector update (batched) ---
         update = W[:, k, k+1]  # (batch,)
