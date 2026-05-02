@@ -1,7 +1,6 @@
 import pytest
 import torch
 
-
 dtype = pytest.simple_fixture("dtype", params=(torch.float64,))
 
 

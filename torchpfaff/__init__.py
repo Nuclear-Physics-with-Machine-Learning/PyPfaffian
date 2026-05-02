@@ -2,4 +2,4 @@
 
 __version__ = "0.2.0"
 
-from .pfaffian import pfaffian, log_pfaffian, LogPfaffian
+from .pfaffian import LogPfaffian, log_pfaffian, pfaffian

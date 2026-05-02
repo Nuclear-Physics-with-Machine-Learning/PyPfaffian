@@ -1,5 +1,4 @@
 import pytest
-
 import torch
 
 from torchpfaff.pfaffian import LogPfaffian
@@ -31,8 +30,9 @@ def test_log_pfaffian_vjp_analytical(skew_matrix):
     logpf.backward()
 
     expected = -0.5 * torch.linalg.inv(skew_matrix)
-    assert torch.allclose(A.grad, expected, atol=1e-8), \
+    assert torch.allclose(A.grad, expected, atol=1e-8), (
         f"max error: {(A.grad - expected).abs().max().item()}"
+    )
 
 
 def test_pfaffian_jvp_numerical(N, seed, dtype):
@@ -58,12 +58,13 @@ def test_pfaffian_jvp_numerical(N, seed, dtype):
 
     # Central finite-difference
     kick = 1e-5
-    pf_plus  = pfaffian_LTL(A + 0.5 * kick * tangent)
+    pf_plus = pfaffian_LTL(A + 0.5 * kick * tangent)
     pf_minus = pfaffian_LTL(A - 0.5 * kick * tangent)
     numerical_jvp = (pf_plus - pf_minus) / kick
 
-    assert torch.allclose(analytical_jvp, numerical_jvp, atol=1e-4), \
+    assert torch.allclose(analytical_jvp, numerical_jvp, atol=1e-4), (
         f"analytical={analytical_jvp.item()}, numerical={numerical_jvp.item()}"
+    )
 
 
 def test_log_pfaffian_vmap(skew_matrix_batch):
@@ -74,7 +75,9 @@ def test_log_pfaffian_vmap(skew_matrix_batch):
 
     for i in range(batch):
         sign_i, logpf_i = LogPfaffian.apply(skew_matrix_batch[i])
-        assert torch.allclose(sign_vmap[i], sign_i), \
+        assert torch.allclose(sign_vmap[i], sign_i), (
             f"batch[{i}] sign: vmap={sign_vmap[i].item()}, single={sign_i.item()}"
-        assert torch.allclose(logpf_vmap[i], logpf_i, atol=1e-10), \
+        )
+        assert torch.allclose(logpf_vmap[i], logpf_i, atol=1e-10), (
             f"batch[{i}] logpf: vmap={logpf_vmap[i].item()}, single={logpf_i.item()}"
+        )

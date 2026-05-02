@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from torchpfaff import log_pfaffian, LogPfaffian
-from torchpfaff.utils import pfaffian_recursive, pfaffian_LTL, batched_log_pfaffian_ltl
+from torchpfaff import log_pfaffian
+from torchpfaff.utils import pfaffian_LTL, pfaffian_recursive
 
 
 def test_pfaffian_ltl_matches_recursive(skew_matrix):
@@ -13,8 +13,9 @@ def test_pfaffian_ltl_matches_recursive(skew_matrix):
 
     pf_ltl = pfaffian_LTL(skew_matrix)
     pf_rec = pfaffian_recursive(skew_matrix)
-    assert torch.allclose(pf_ltl, pf_rec, atol=1e-8), \
+    assert torch.allclose(pf_ltl, pf_rec, atol=1e-8), (
         f"LTL={pf_ltl.item()}, recursive={pf_rec.item()}"
+    )
 
 
 def test_log_pfaffian_reconstructs_pfaffian(skew_matrix):
@@ -22,8 +23,9 @@ def test_log_pfaffian_reconstructs_pfaffian(skew_matrix):
     sign, logpf = log_pfaffian(skew_matrix, backend="pytorch")
     pf_from_log = sign * torch.exp(logpf)
     pf_ltl = pfaffian_LTL(skew_matrix)
-    assert torch.allclose(pf_from_log, pf_ltl, atol=1e-6), \
+    assert torch.allclose(pf_from_log, pf_ltl, atol=1e-6), (
         f"reconstructed={pf_from_log.item()}, LTL={pf_ltl.item()}"
+    )
 
 
 def test_pf_squared_equals_det(skew_matrix):
@@ -31,8 +33,9 @@ def test_pf_squared_equals_det(skew_matrix):
     sign, logpf = log_pfaffian(skew_matrix, backend="pytorch")
     pf = sign * torch.exp(logpf)
     det = torch.linalg.det(skew_matrix)
-    assert torch.allclose(pf**2, det, atol=1e-4), \
-        f"pf^2={( pf**2).item()}, det={det.item()}"
+    assert torch.allclose(pf**2, det, atol=1e-4), (
+        f"pf^2={(pf**2).item()}, det={det.item()}"
+    )
 
 
 def test_sign_flips_under_particle_swap(skew_matrix):
@@ -45,16 +48,21 @@ def test_sign_flips_under_particle_swap(skew_matrix):
 
     # Swap rows/cols 0 and 1
     P = torch.eye(N, dtype=skew_matrix.dtype)
-    P[0, 0] = 0; P[1, 1] = 0; P[0, 1] = 1; P[1, 0] = 1
+    P[0, 0] = 0
+    P[1, 1] = 0
+    P[0, 1] = 1
+    P[1, 0] = 1
     A_swapped = P @ skew_matrix @ P.T
 
     sign_swapped, logpf_swapped = log_pfaffian(A_swapped, backend="pytorch")
 
     # log|pf| should be unchanged, sign should flip
-    assert torch.allclose(logpf_orig, logpf_swapped, atol=1e-8), \
+    assert torch.allclose(logpf_orig, logpf_swapped, atol=1e-8), (
         f"logpf changed: {logpf_orig.item()} vs {logpf_swapped.item()}"
-    assert torch.allclose(sign_orig, -sign_swapped, atol=1e-8), \
+    )
+    assert torch.allclose(sign_orig, -sign_swapped, atol=1e-8), (
         f"sign didn't flip: {sign_orig.item()} vs {sign_swapped.item()}"
+    )
 
 
 def test_odd_dimension_zero(seed, dtype):
@@ -74,10 +82,12 @@ def test_batched_matches_individual(skew_matrix_batch):
 
     for i in range(batch):
         sign_i, logpf_i = log_pfaffian(skew_matrix_batch[i], backend="pytorch")
-        assert torch.allclose(sign_b[i], sign_i), \
+        assert torch.allclose(sign_b[i], sign_i), (
             f"batch[{i}] sign mismatch: {sign_b[i].item()} vs {sign_i.item()}"
-        assert torch.allclose(logpf_b[i], logpf_i, atol=1e-10), \
+        )
+        assert torch.allclose(logpf_b[i], logpf_i, atol=1e-10), (
             f"batch[{i}] logpf mismatch: {logpf_b[i].item()} vs {logpf_i.item()}"
+        )
 
 
 def test_batched_pf_squared_equals_det(skew_matrix_batch):

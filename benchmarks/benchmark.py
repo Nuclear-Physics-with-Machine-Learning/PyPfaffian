@@ -14,7 +14,6 @@ Usage:
 
 import argparse
 import csv
-import io
 import statistics
 import sys
 import time
@@ -26,6 +25,7 @@ from torchpfaff import log_pfaffian
 _triton_available = False
 try:
     import triton  # noqa: F401
+
     _triton_available = True
 except ImportError:
     pass
@@ -39,14 +39,14 @@ _KNOWN_BW = {
     "A100-SXM4-80GB": 2039,
     "A100-PCIE-40GB": 1555,
     "A100-PCIE-80GB": 1935,
-    "H100-SXM":       3350,
-    "H100-PCIE":      2039,
-    "V100-SXM2":      900,
-    "V100-PCIE":      900,
-    "A6000":          768,
-    "RTX 4090":       1008,
-    "RTX 3090":       936,
-    "GH200":          4800,
+    "H100-SXM": 3350,
+    "H100-PCIE": 2039,
+    "V100-SXM2": 900,
+    "V100-PCIE": 900,
+    "A6000": 768,
+    "RTX 4090": 1008,
+    "RTX 3090": 936,
+    "GH200": 4800,
 }
 
 
@@ -66,8 +66,9 @@ def get_peak_bandwidth_gb(device: torch.device) -> float | None:
     return None
 
 
-def make_skew_symmetric(B: int, N: int, dtype: torch.dtype,
-                        device: torch.device) -> torch.Tensor:
+def make_skew_symmetric(
+    B: int, N: int, dtype: torch.dtype, device: torch.device
+) -> torch.Tensor:
     """Generate a batch of random skew-symmetric matrices."""
     M = torch.randn(B, N, N, dtype=dtype, device=device)
     return M - M.transpose(-1, -2)
@@ -77,9 +78,10 @@ def make_skew_symmetric(B: int, N: int, dtype: torch.dtype,
 # FLOP and byte model for Parlett-Reid LTL
 # ---------------------------------------------------------------------------
 
+
 def ltl_flops(B: int, N: int) -> int:
     """Leading-order FLOPs for batched LTL: 2*B*N^3."""
-    return 2 * B * N ** 3
+    return 2 * B * N**3
 
 
 def ltl_bytes(B: int, N: int, dtype: torch.dtype) -> int:
@@ -88,8 +90,7 @@ def ltl_bytes(B: int, N: int, dtype: torch.dtype) -> int:
     return B * N * N * elem + 2 * B * elem
 
 
-def sol_time_s(B: int, N: int, dtype: torch.dtype,
-               peak_bw_gb: float) -> float:
+def sol_time_s(B: int, N: int, dtype: torch.dtype, peak_bw_gb: float) -> float:
     """Bandwidth-bound speed-of-light time in seconds."""
     return ltl_bytes(B, N, dtype) / (peak_bw_gb * 1e9)
 
@@ -97,6 +98,7 @@ def sol_time_s(B: int, N: int, dtype: torch.dtype,
 # ---------------------------------------------------------------------------
 # Correctness check
 # ---------------------------------------------------------------------------
+
 
 def check_correctness(A: torch.Tensor, backend: str) -> bool:
     """Verify pf(A)^2 == det(A) for the first matrix in the batch."""
@@ -111,8 +113,8 @@ def check_correctness(A: torch.Tensor, backend: str) -> bool:
 # Timing helpers
 # ---------------------------------------------------------------------------
 
-def _time_cpu(A: torch.Tensor, backend: str, warmup: int,
-              repeats: int) -> list[float]:
+
+def _time_cpu(A: torch.Tensor, backend: str, warmup: int, repeats: int) -> list[float]:
     """Time log_pfaffian on CPU, return list of elapsed seconds."""
     for _ in range(warmup):
         log_pfaffian(A, backend=backend)
@@ -126,8 +128,7 @@ def _time_cpu(A: torch.Tensor, backend: str, warmup: int,
     return times
 
 
-def _time_cuda(A: torch.Tensor, backend: str, warmup: int,
-               repeats: int) -> list[float]:
+def _time_cuda(A: torch.Tensor, backend: str, warmup: int, repeats: int) -> list[float]:
     """Time log_pfaffian on CUDA using cuda Events, return list of seconds."""
     for _ in range(warmup):
         log_pfaffian(A, backend=backend)
@@ -145,8 +146,7 @@ def _time_cuda(A: torch.Tensor, backend: str, warmup: int,
     return times
 
 
-def bench(A: torch.Tensor, backend: str, warmup: int,
-          repeats: int) -> float:
+def bench(A: torch.Tensor, backend: str, warmup: int, repeats: int) -> float:
     """Return median wall time in seconds."""
     if A.is_cuda:
         times = _time_cuda(A, backend, warmup, repeats)
@@ -159,44 +159,75 @@ def bench(A: torch.Tensor, backend: str, warmup: int,
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main():
     parser = argparse.ArgumentParser(
-        description="torchpfaff benchmark with speed-of-light analysis")
-    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu",
-                        choices=["cpu", "cuda"],
-                        help="Device to benchmark on (default: cuda if available)")
-    parser.add_argument("--dtype", default="float64",
-                        choices=["float32", "float64"],
-                        help="Data type (default: float64)")
-    parser.add_argument("--N", type=int, nargs="+",
-                        default=[2, 4, 6, 8, 12, 16, 20, 32, 40, 64],
-                        help="Matrix sizes to benchmark")
-    parser.add_argument("--batch", type=int, nargs="+",
-                        default=[1, 32, 256, 1024, 4096],
-                        help="Batch sizes to benchmark")
-    parser.add_argument("--warmup", type=int, default=3,
-                        help="Number of warmup iterations (default: 3)")
-    parser.add_argument("--repeats", type=int, default=20,
-                        help="Number of timed iterations (default: 20)")
-    parser.add_argument("--csv", type=str, default=None,
-                        help="Write results to CSV file")
-    parser.add_argument("--backend", type=str, nargs="+", default=None,
-                        choices=["pytorch", "triton"],
-                        help="Backends to benchmark (default: all available)")
-    parser.add_argument("--skip-correctness", action="store_true",
-                        help="Skip pf^2==det correctness check")
+        description="torchpfaff benchmark with speed-of-light analysis"
+    )
+    parser.add_argument(
+        "--device",
+        default="cuda" if torch.cuda.is_available() else "cpu",
+        choices=["cpu", "cuda"],
+        help="Device to benchmark on (default: cuda if available)",
+    )
+    parser.add_argument(
+        "--dtype",
+        default="float64",
+        choices=["float32", "float64"],
+        help="Data type (default: float64)",
+    )
+    parser.add_argument(
+        "--N",
+        type=int,
+        nargs="+",
+        default=[2, 4, 6, 8, 12, 16, 20, 32, 40, 64],
+        help="Matrix sizes to benchmark",
+    )
+    parser.add_argument(
+        "--batch",
+        type=int,
+        nargs="+",
+        default=[1, 32, 256, 1024, 4096],
+        help="Batch sizes to benchmark",
+    )
+    parser.add_argument(
+        "--warmup", type=int, default=3, help="Number of warmup iterations (default: 3)"
+    )
+    parser.add_argument(
+        "--repeats",
+        type=int,
+        default=20,
+        help="Number of timed iterations (default: 20)",
+    )
+    parser.add_argument(
+        "--csv", type=str, default=None, help="Write results to CSV file"
+    )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        nargs="+",
+        default=None,
+        choices=["pytorch", "triton"],
+        help="Backends to benchmark (default: all available)",
+    )
+    parser.add_argument(
+        "--skip-correctness",
+        action="store_true",
+        help="Skip pf^2==det correctness check",
+    )
     args = parser.parse_args()
 
     device = torch.device(args.device)
     dtype = torch.float64 if args.dtype == "float64" else torch.float32
-    elem_bytes = torch.finfo(dtype).bits // 8
 
     # Determine backends to run
     if args.backend is not None:
         backends = args.backend
         if "triton" in backends and not _triton_available:
-            print("ERROR: triton backend requested but triton is not installed",
-                  file=sys.stderr)
+            print(
+                "ERROR: triton backend requested but triton is not installed",
+                file=sys.stderr,
+            )
             sys.exit(1)
         if "triton" in backends and device.type != "cuda":
             print("ERROR: triton backend requires --device cuda", file=sys.stderr)
@@ -224,9 +255,11 @@ def main():
 
     # Table header
     hdr_sol = "SoL%" if peak_bw is not None else ""
-    header = (f"{'N':>4s}  {'Batch':>6s}  {'Backend':<14s}  "
-              f"{'Median(ms)':>10s}  {'Mat/s':>10s}  "
-              f"{'GB/s':>8s}  {'GFLOP/s':>8s}")
+    header = (
+        f"{'N':>4s}  {'Batch':>6s}  {'Backend':<14s}  "
+        f"{'Median(ms)':>10s}  {'Mat/s':>10s}  "
+        f"{'GB/s':>8s}  {'GFLOP/s':>8s}"
+    )
     if hdr_sol:
         header += f"  {hdr_sol:>6s}"
     print(header)
@@ -243,8 +276,10 @@ def main():
                 if not args.skip_correctness and N >= 2 and N % 2 == 0:
                     ok = check_correctness(A, backend)
                     if not ok:
-                        print(f"  *** CORRECTNESS FAILURE: N={N} B={B} "
-                              f"backend={backend} ***")
+                        print(
+                            f"  *** CORRECTNESS FAILURE: N={N} B={B} "
+                            f"backend={backend} ***"
+                        )
 
                 median_s = bench(A, backend, args.warmup, args.repeats)
                 median_ms = median_s * 1000
@@ -257,16 +292,18 @@ def main():
 
                 # Format throughput with suffix
                 if mats_per_s >= 1e6:
-                    mats_str = f"{mats_per_s/1e6:.2f}M"
+                    mats_str = f"{mats_per_s / 1e6:.2f}M"
                 elif mats_per_s >= 1e3:
-                    mats_str = f"{mats_per_s/1e3:.2f}K"
+                    mats_str = f"{mats_per_s / 1e3:.2f}K"
                 else:
                     mats_str = f"{mats_per_s:.1f}"
 
                 label = f"pytorch-{device.type}" if backend == "pytorch" else backend
-                line = (f"{N:4d}  {B:6d}  {label:<14s}  "
-                        f"{median_ms:10.3f}  {mats_str:>10s}  "
-                        f"{gbps:8.2f}  {gflops:8.2f}")
+                line = (
+                    f"{N:4d}  {B:6d}  {label:<14s}  "
+                    f"{median_ms:10.3f}  {mats_str:>10s}  "
+                    f"{gbps:8.2f}  {gflops:8.2f}"
+                )
 
                 sol_pct = None
                 if peak_bw is not None and device.type == "cuda":
@@ -276,15 +313,19 @@ def main():
 
                 print(line)
 
-                rows.append({
-                    "N": N, "batch": B, "backend": label,
-                    "dtype": args.dtype,
-                    "median_ms": round(median_ms, 4),
-                    "mat_per_s": round(mats_per_s, 1),
-                    "gbps": round(gbps, 3),
-                    "gflops": round(gflops, 3),
-                    "sol_pct": round(sol_pct, 2) if sol_pct is not None else "",
-                })
+                rows.append(
+                    {
+                        "N": N,
+                        "batch": B,
+                        "backend": label,
+                        "dtype": args.dtype,
+                        "median_ms": round(median_ms, 4),
+                        "mat_per_s": round(mats_per_s, 1),
+                        "gbps": round(gbps, 3),
+                        "gflops": round(gflops, 3),
+                        "sol_pct": round(sol_pct, 2) if sol_pct is not None else "",
+                    }
+                )
 
             del A
             if device.type == "cuda":
@@ -292,8 +333,17 @@ def main():
 
     # CSV output
     if args.csv and rows:
-        fieldnames = ["N", "batch", "backend", "dtype",
-                      "median_ms", "mat_per_s", "gbps", "gflops", "sol_pct"]
+        fieldnames = [
+            "N",
+            "batch",
+            "backend",
+            "dtype",
+            "median_ms",
+            "mat_per_s",
+            "gbps",
+            "gflops",
+            "sol_pct",
+        ]
         with open(args.csv, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()

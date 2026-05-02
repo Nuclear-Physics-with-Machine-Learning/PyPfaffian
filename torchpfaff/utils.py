@@ -12,10 +12,16 @@ def pfaffian_direct(A: torch.Tensor):
     """
     n = A.shape[-1]
 
-    if n % 2 == 1: return torch.zeros((), dtype=A.dtype, device=A.device)
-    if n == 2: return -A[..., 1, 0]
+    if n % 2 == 1:
+        return torch.zeros((), dtype=A.dtype, device=A.device)
+    if n == 2:
+        return -A[..., 1, 0]
     if n == 4:
-        return A[...,1,0]*A[...,3,2] - A[...,2,0]*A[...,3,1] + A[...,2,1]*A[...,3,0]
+        return (
+            A[..., 1, 0] * A[..., 3, 2]
+            - A[..., 2, 0] * A[..., 3, 1]
+            + A[..., 2, 1] * A[..., 3, 0]
+        )
     else:
         raise ValueError("pfaffian_direct only supports N <= 4")
 
@@ -32,15 +38,21 @@ def log_pfaffian_direct(A: torch.Tensor):
     n = A.shape[-1]
 
     if n % 2 == 1:
-        return (torch.ones(A.shape[:-2], dtype=A.dtype, device=A.device),
-                torch.full(A.shape[:-2], float('-inf'), dtype=A.dtype, device=A.device))
+        return (
+            torch.ones(A.shape[:-2], dtype=A.dtype, device=A.device),
+            torch.full(A.shape[:-2], float("-inf"), dtype=A.dtype, device=A.device),
+        )
 
     if n == 2:
         val = -A[..., 1, 0]
         return torch.sign(val), torch.log(torch.abs(val))
 
     if n == 4:
-        val = A[...,1,0]*A[...,3,2] - A[...,2,0]*A[...,3,1] + A[...,2,1]*A[...,3,0]
+        val = (
+            A[..., 1, 0] * A[..., 3, 2]
+            - A[..., 2, 0] * A[..., 3, 1]
+            + A[..., 2, 1] * A[..., 3, 0]
+        )
         return torch.sign(val), torch.log(torch.abs(val))
 
     raise ValueError("log_pfaffian_direct only supports N <= 4")
@@ -61,13 +73,13 @@ def pfaffian_recursive(A: torch.Tensor):
         return -A[1, 0]
 
     def delete(_A, index):
-        temp_m = torch.cat([_A[:index, :], _A[(index+1):, :]], dim=0)
-        return torch.cat([temp_m[:, :index], temp_m[:, (index+1):]], dim=1)
+        temp_m = torch.cat([_A[:index, :], _A[(index + 1) :, :]], dim=0)
+        return torch.cat([temp_m[:, :index], temp_m[:, (index + 1) :]], dim=1)
 
     delete_0 = delete(A, 0)
     this_pf = torch.zeros((), dtype=A.dtype, device=A.device)
     for i in range(1, n):
-        a_0j = (-1)**(i) * A[0, i]
+        a_0j = (-1) ** (i) * A[0, i]
         submatrix = delete(delete_0, i - 1)
         this_pf = this_pf + a_0j * pfaffian_recursive(submatrix)
 
@@ -102,7 +114,7 @@ def batched_log_pfaffian_ltl(A):
 
     if n % 2 == 1:
         sign = torch.ones(batch, dtype=A.dtype, device=A.device)
-        logpf = torch.full((batch,), float('-inf'), dtype=A.dtype, device=A.device)
+        logpf = torch.full((batch,), float("-inf"), dtype=A.dtype, device=A.device)
         if squeezed:
             return sign.squeeze(0), logpf.squeeze(0)
         return sign, logpf
@@ -126,7 +138,7 @@ def batched_log_pfaffian_ltl(A):
 
         # --- Pivot swap (fully batched, no .item()) ---
         k1 = k + 1
-        need_swap = (kp != k1)
+        need_swap = kp != k1
         swap_mask = need_swap.unsqueeze(-1)  # (batch, 1)
 
         # Row swap: exchange rows k1 and kp[b] for each batch element
@@ -140,21 +152,28 @@ def batched_log_pfaffian_ltl(A):
         kp_idx = kp.view(-1, 1, 1).expand(-1, n, 1)
         col_kp = torch.gather(W, 2, kp_idx).squeeze(-1)
         W[:, :, k1] = torch.where(swap_mask, col_kp, col_k1)
-        W.scatter_(2, kp_idx,
-                   torch.where(swap_mask.unsqueeze(-1),
-                               col_k1.unsqueeze(-1), col_kp.unsqueeze(-1)))
+        W.scatter_(
+            2,
+            kp_idx,
+            torch.where(
+                swap_mask.unsqueeze(-1), col_k1.unsqueeze(-1), col_kp.unsqueeze(-1)
+            ),
+        )
 
         pf_sign = torch.where(need_swap, -pf_sign, pf_sign)
 
         # --- Gauss vector update (batched) ---
-        update = W[:, k, k+1]  # (batch,)
+        update = W[:, k, k + 1]  # (batch,)
 
-        mu = W[:, k, :] / update.unsqueeze(-1)   # (batch, n) -- row k
-        nu = W[:, :, k+1]                         # (batch, n) -- column k+1
+        mu = W[:, k, :] / update.unsqueeze(-1)  # (batch, n) -- row k
+        nu = W[:, :, k + 1]  # (batch, n) -- column k+1
 
         # Rank-2 skew update: A += outer(mu, nu) - outer(nu, mu)
-        W = W + torch.bmm(mu.unsqueeze(-1), nu.unsqueeze(-2)) \
-              - torch.bmm(nu.unsqueeze(-1), mu.unsqueeze(-2))
+        W = (
+            W
+            + torch.bmm(mu.unsqueeze(-1), nu.unsqueeze(-2))
+            - torch.bmm(nu.unsqueeze(-1), mu.unsqueeze(-2))
+        )
 
         # Accumulate sign and log
         pf_sign = pf_sign * torch.sign(update)
@@ -167,6 +186,7 @@ def batched_log_pfaffian_ltl(A):
 
 # ---- Legacy API wrappers (kept for backward compat with existing callers) ----
 
+
 def pivot(_A, _k, _kp):
     """Perform a pivot swap on a single matrix. Legacy API."""
     _A = _A.clone()
@@ -178,13 +198,15 @@ def pivot(_A, _k, _kp):
     _A[:, _kp] = temp
     return _A, -1.0
 
+
 def form_gauss_vector(_A, _k):
     """Form Gauss vector and return update. Legacy API."""
-    pfaffian_update = _A[_k, _k+1]
+    pfaffian_update = _A[_k, _k + 1]
     mu = _A[_k, :] / pfaffian_update
-    nu = _A[:, _k+1]
+    nu = _A[:, _k + 1]
     _A = _A + torch.outer(mu, nu) - torch.outer(nu, mu)
     return _A, pfaffian_update
+
 
 def pfaffian_LTL(A):
     """Compute the Pfaffian via Parlett-Reid LTL. Single-matrix, legacy API."""
@@ -197,7 +219,7 @@ def pfaffian_LTL(A):
 
     for _k in range(0, n - 1, 2):
         full_region = _A[:, _k].clone()
-        full_region[:_k+1] = 0.0
+        full_region[: _k + 1] = 0.0
         _kp = int(torch.abs(full_region).argmax())
 
         if _kp != _k + 1:
@@ -209,6 +231,7 @@ def pfaffian_LTL(A):
         pfaffian_val = sign * update * pfaffian_val
 
     return pfaffian_val
+
 
 def log_pfaffian_LTL(A):
     """Compute (sign, log|pf|) via Parlett-Reid LTL. Single-matrix, legacy API.

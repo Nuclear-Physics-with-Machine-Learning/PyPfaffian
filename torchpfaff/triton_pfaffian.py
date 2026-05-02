@@ -59,7 +59,7 @@ def _log_pfaffian_ltl_kernel(
             kp = tl.min(tl.where(is_max, ri, N), axis=0)
 
             k1 = k + 1
-            need_swap = (kp != k1)
+            need_swap = kp != k1
 
             # --- Pivot swap (rows then columns) ---
             # Extract rows k1 and kp
@@ -67,8 +67,8 @@ def _log_pfaffian_ltl_kernel(
             row_kp = tl.sum(tl.where(ri[:, None] == kp, W, 0.0), axis=0)
 
             # Swap rows: set row k1 = row_kp, row kp = row_k1
-            is_row_k1 = (ri[:, None] == k1)
-            is_row_kp = (ri[:, None] == kp)
+            is_row_k1 = ri[:, None] == k1
+            is_row_kp = ri[:, None] == kp
             W = tl.where(is_row_k1 & need_swap, row_kp[None, :], W)
             W = tl.where(is_row_kp & need_swap, row_k1[None, :], W)
 
@@ -77,8 +77,8 @@ def _log_pfaffian_ltl_kernel(
             col_kp = tl.sum(tl.where(ci[None, :] == kp, W, 0.0), axis=1)
 
             # Swap columns: set col k1 = col_kp, col kp = col_k1
-            is_col_k1 = (ci[None, :] == k1)
-            is_col_kp = (ci[None, :] == kp)
+            is_col_k1 = ci[None, :] == k1
+            is_col_kp = ci[None, :] == kp
             W = tl.where(is_col_k1 & need_swap, col_kp[:, None], W)
             W = tl.where(is_col_kp & need_swap, col_k1[:, None], W)
 
@@ -124,7 +124,7 @@ def triton_log_pfaffian(A):
 
     if n % 2 == 1:
         sign = torch.ones(batch, dtype=A.dtype, device=A.device)
-        logpf = torch.full((batch,), float('-inf'), dtype=A.dtype, device=A.device)
+        logpf = torch.full((batch,), float("-inf"), dtype=A.dtype, device=A.device)
         if squeezed:
             return sign.squeeze(0), logpf.squeeze(0)
         return sign, logpf

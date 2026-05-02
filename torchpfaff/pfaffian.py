@@ -1,15 +1,11 @@
+# Check if Triton is available (use find_spec to avoid an unused-import lint)
+import importlib.util
+
 import torch
 
-from . utils import batched_log_pfaffian_ltl, pfaffian_LTL
+from .utils import batched_log_pfaffian_ltl, pfaffian_LTL
 
-
-# Check if Triton is available
-_triton_available = False
-try:
-    import triton
-    _triton_available = True
-except ImportError:
-    pass
+_triton_available = importlib.util.find_spec("triton") is not None
 
 
 class LogPfaffian(torch.autograd.Function):
@@ -38,7 +34,7 @@ class LogPfaffian(torch.autograd.Function):
 
     @staticmethod
     def setup_context(ctx, inputs, output):
-        A, = inputs
+        (A,) = inputs
         sign, logpf = output
         ctx.save_for_backward(A)
 
@@ -47,7 +43,7 @@ class LogPfaffian(torch.autograd.Function):
         """Analytical backward via the Jacobi-like formula for skew-symmetric A:
         d(log|pf(A)|)/dA_ij = -1/2 * (A^{-1})_ij
         """
-        A, = ctx.saved_tensors
+        (A,) = ctx.saved_tensors
         A_inv = torch.linalg.inv(A)
         # grad_logpf may be scalar or (batch,); broadcast to (..., 1, 1)
         if grad_logpf.dim() == 0:
@@ -71,6 +67,7 @@ class LogPfaffian(torch.autograd.Function):
         # (now tensorized) PyTorch path under torch.compile.
         if A.is_cuda and _triton_available and not torch.compiler.is_compiling():
             from .triton_pfaffian import triton_log_pfaffian
+
             sign, logpf = triton_log_pfaffian(A)
         else:
             sign, logpf = LogPfaffian.apply(A)
@@ -100,10 +97,12 @@ def pfaffian(M: torch.Tensor, method: str = "LTL"):
     if method == "LTL":
         return pfaffian_LTL(M)
     elif method == "direct":
-        from . utils import pfaffian_direct
+        from .utils import pfaffian_direct
+
         return pfaffian_direct(M)
     elif method == "recursive":
-        from . utils import pfaffian_recursive
+        from .utils import pfaffian_recursive
+
         return pfaffian_recursive(M)
     else:
         raise ValueError(f"Method {method} not supported")
@@ -139,7 +138,8 @@ def log_pfaffian(M: torch.Tensor, backend: str = "auto"):
             backend = "pytorch"
 
     if backend == "triton":
-        from . triton_pfaffian import triton_log_pfaffian
+        from .triton_pfaffian import triton_log_pfaffian
+
         return triton_log_pfaffian(M)
     else:
         return LogPfaffian.apply(M)
