@@ -126,7 +126,6 @@ def batched_log_pfaffian_ltl(A):
     log_pf = torch.zeros(batch, dtype=A.dtype, device=A.device)
 
     arange_n = torch.arange(n, device=A.device)
-    batch_idx = torch.arange(batch, device=A.device)
 
     for k in range(0, n - 1, 2):
         # --- Pivot selection ---
@@ -136,29 +135,40 @@ def batched_log_pfaffian_ltl(A):
         masked_col = torch.where(mask, torch.zeros_like(col), col)
         kp = torch.argmax(torch.abs(masked_col), dim=1)  # (batch,)
 
-        # --- Pivot swap (fully batched, no .item()) ---
+        # --- Pivot swap (fully batched, out-of-place for vmap-safety) ---
+        # The previous in-place version used W[batch_idx, kp, :] = ... and
+        # W.scatter_(...), both of which lower to aten::scatter_.src.  That
+        # op has no functorch batching rule, so under vmap (especially when
+        # vmap is itself wrapped in torch.compile) it falls back to a slow
+        # per-walker Python loop.  Tensor.scatter (no underscore) DOES have
+        # a batching rule, so we use it for both swap writes.
         k1 = k + 1
         need_swap = kp != k1
         swap_mask = need_swap.unsqueeze(-1)  # (batch, 1)
 
-        # Row swap: exchange rows k1 and kp[b] for each batch element
-        row_k1 = W[:, k1, :].clone()
-        row_kp = W[batch_idx, kp, :].clone()
-        W[:, k1, :] = torch.where(swap_mask, row_kp, row_k1)
-        W[batch_idx, kp, :] = torch.where(swap_mask, row_k1, row_kp)
+        # Row swap: exchange rows k1 and kp[b]
+        kp_idx_row = kp.view(-1, 1, 1).expand(-1, 1, n)        # (batch, 1, n)
+        row_k1 = W[:, k1, :]                                    # (batch, n)
+        row_kp = torch.gather(W, 1, kp_idx_row).squeeze(1)      # (batch, n)
 
-        # Column swap: exchange cols k1 and kp[b] for each batch element
-        col_k1 = W[:, :, k1].clone()
-        kp_idx = kp.view(-1, 1, 1).expand(-1, n, 1)
-        col_kp = torch.gather(W, 2, kp_idx).squeeze(-1)
-        W[:, :, k1] = torch.where(swap_mask, col_kp, col_k1)
-        W.scatter_(
-            2,
-            kp_idx,
-            torch.where(
-                swap_mask.unsqueeze(-1), col_k1.unsqueeze(-1), col_kp.unsqueeze(-1)
-            ),
-        )
+        new_row_k1 = torch.where(swap_mask, row_kp, row_k1)
+        new_row_kp = torch.where(swap_mask, row_k1, row_kp)
+
+        k1_idx_row = torch.full_like(kp_idx_row, k1)
+        W = W.scatter(1, k1_idx_row, new_row_k1.unsqueeze(1))
+        W = W.scatter(1, kp_idx_row, new_row_kp.unsqueeze(1))
+
+        # Column swap: exchange cols k1 and kp[b]
+        kp_idx_col = kp.view(-1, 1, 1).expand(-1, n, 1)         # (batch, n, 1)
+        col_k1 = W[:, :, k1]                                    # (batch, n)
+        col_kp = torch.gather(W, 2, kp_idx_col).squeeze(-1)     # (batch, n)
+
+        new_col_k1 = torch.where(swap_mask, col_kp, col_k1)
+        new_col_kp = torch.where(swap_mask, col_k1, col_kp)
+
+        k1_idx_col = torch.full_like(kp_idx_col, k1)
+        W = W.scatter(2, k1_idx_col, new_col_k1.unsqueeze(-1))
+        W = W.scatter(2, kp_idx_col, new_col_kp.unsqueeze(-1))
 
         pf_sign = torch.where(need_swap, -pf_sign, pf_sign)
 
