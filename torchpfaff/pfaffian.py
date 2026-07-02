@@ -62,6 +62,7 @@ class LogPfaffian(torch.autograd.Function):
 
     Forward: Parlett-Reid LTL with partial pivoting (batched).
     Backward: Analytical gradient d(log|pf(A)|)/dA_ij = -1/2 * (A^{-1})_ij
+    JVP: Analytical contraction of that gradient with the matrix tangent.
     """
 
     @staticmethod
@@ -83,8 +84,8 @@ class LogPfaffian(torch.autograd.Function):
     @staticmethod
     def setup_context(ctx, inputs, output):
         (A,) = inputs
-        sign, logpf = output
         ctx.save_for_backward(A)
+        ctx.save_for_forward(A)
 
     @staticmethod
     def backward(ctx, grad_sign, grad_logpf):
@@ -102,15 +103,25 @@ class LogPfaffian(torch.autograd.Function):
         return -0.5 * A_inv * grad_logpf_b
 
     @staticmethod
-    def vmap(info, in_dims, A):
-        """vmap batching rule: route the forward to the custom op.
+    def jvp(ctx, grad_A):
+        """Forward-mode derivative of ``(sign(A), log|pf(A)|)``.
 
-        This rule supplies ONLY the forward pass under ``torch.vmap``;
-        VJPs are still produced by ``LogPfaffian.backward`` because
-        functorch's autograd.Function dispatch routes ``grad`` through
-        the Function's own ``backward`` regardless of what the vmap
-        rule body computes.  The custom op itself is not autograd-
-        registered (see the NOTE on _log_pfaffian_op above).
+        The Pfaffian sign is piecewise constant.  For the log magnitude,
+        ``d log|pf(A)| = -1/2 sum_ij (A^-1)_ij dA_ij`` for a
+        skew-symmetric matrix and tangent.
+        """
+        (A,) = ctx.saved_tensors
+        grad_logpf = (-0.5 * torch.linalg.inv(A) * grad_A).sum(dim=(-2, -1))
+        return torch.zeros_like(grad_logpf), grad_logpf
+
+    @staticmethod
+    def vmap(info, in_dims, A):
+        """Batch the matrix input while preserving the outer autograd Function.
+
+        Re-entering ``LogPfaffian.apply`` on the unwrapped physical batch makes
+        both ``vmap(grad(...))`` and ``grad(vmap(...))`` use the analytical
+        backward.  Calling the raw custom op here would support forward-only
+        vmap but lose autograd under an outer functional transform.
 
         ``register_fake`` on the underlying op lets Dynamo perform shape
         inference under ``torch.compile`` without executing the Triton
@@ -123,7 +134,10 @@ class LogPfaffian(torch.autograd.Function):
             # Unbatched input inside vmap: add batch dim
             A = A.unsqueeze(0)
 
-        sign, logpf = _log_pfaffian_op(A)
+        # Re-enter the outer autograd Function on the physical (unwrapped)
+        # batch tensor.  Calling the raw custom op here would make
+        # grad(vmap(LogPfaffian)) lose the analytical backward.
+        sign, logpf = LogPfaffian.apply(A)
 
         if bdim is None:
             return (sign.squeeze(0), logpf.squeeze(0)), (None, None)

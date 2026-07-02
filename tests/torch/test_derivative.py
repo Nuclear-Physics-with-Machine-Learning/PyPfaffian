@@ -4,13 +4,6 @@ import torch
 from torchpfaff.pfaffian import LogPfaffian
 from torchpfaff.utils import pfaffian_LTL
 
-_FWD_AD_XFAIL = (
-    "LogPfaffian does not register a forward-mode AD rule (no jvp staticmethod), "
-    "and the underlying _log_pfaffian_op is intentionally not autograd-registered.  "
-    "torch.func.jvp / jacfwd therefore have no JVP path to dispatch through.  "
-    "Documented gap; remove this xfail when forward-mode AD is added."
-)
-
 
 def test_log_pfaffian_gradcheck(N, seed, dtype):
     """Verify LogPfaffian backward against numerical finite differences.
@@ -144,25 +137,35 @@ def test_log_pfaffian_jacrev_via_vmap(skew_matrix_batch, tol):
         assert torch.allclose(batch_jac[i], ref, atol=atol, rtol=rtol)
 
 
-@pytest.mark.xfail(reason=_FWD_AD_XFAIL, strict=False)
-def test_log_pfaffian_jacfwd_matches_jacrev(skew_matrix, tol):
-    """Forward-mode jacobian ``jacfwd`` equals reverse-mode ``jacrev``.
+def test_log_pfaffian_vjp_of_vmap(skew_matrix_batch, tol):
+    """A weighted VJP of batched outputs keeps the analytical backward."""
+    atol, rtol = tol
 
-    Currently expected to xfail because LogPfaffian has no ``jvp`` rule.
-    """
+    def batched_logpf(A):
+        return torch.vmap(lambda matrix: LogPfaffian.apply(matrix)[1])(A)
+
+    output, pullback = torch.func.vjp(batched_logpf, skew_matrix_batch)
+    weights = torch.linspace(
+        0.5, 1.5, output.numel(), dtype=output.dtype, device=output.device
+    )
+    (actual,) = pullback(weights)
+    expected = -0.5 * torch.linalg.inv(skew_matrix_batch) * weights.reshape(-1, 1, 1)
+    assert torch.allclose(actual, expected, atol=atol, rtol=rtol)
+
+
+def test_log_pfaffian_jacfwd_matches_jacrev(skew_matrix, tol):
+    """Forward-mode jacobian ``jacfwd`` equals reverse-mode ``jacrev``."""
     atol, rtol = tol
     jac_fwd = torch.func.jacfwd(_logpf_scalar)(skew_matrix)
     jac_rev = torch.func.jacrev(_logpf_scalar)(skew_matrix)
     assert torch.allclose(jac_fwd, jac_rev, atol=atol, rtol=rtol)
 
 
-@pytest.mark.xfail(reason=_FWD_AD_XFAIL, strict=False)
 def test_log_pfaffian_jvp_via_torch_func(N, seed, dtype):
     """True forward-mode JVP via ``torch.func.jvp``.
 
     The directional derivative of log|pf(A)| in tangent direction V is
-    ``sum_ij (-1/2)(A^{-1})_ij * V_ij``.  Currently xfails because no
-    forward-mode AD rule is registered; kept as a regression guard.
+    ``sum_ij (-1/2)(A^{-1})_ij * V_ij``.
     """
     if N < 4:
         pytest.skip("Need N >= 4 for the chosen tangent")
@@ -256,6 +259,4 @@ def test_log_pfaffian_vmap_unbatched_branch(skew_matrix, tol):
     assert sign_b.shape == (batch_size,)
     assert logpf_b.shape == (batch_size,)
     assert torch.allclose(sign_b, sign_ref.expand(batch_size))
-    assert torch.allclose(
-        logpf_b, logpf_ref.expand(batch_size), atol=atol, rtol=rtol
-    )
+    assert torch.allclose(logpf_b, logpf_ref.expand(batch_size), atol=atol, rtol=rtol)
